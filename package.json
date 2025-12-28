@@ -1,6 +1,6 @@
 {
   "name": "@bridgerb/horizon",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Calculate 360-degree horizon elevation angles from elevation data",
   "type": "module",
   "main": "dist/index.js",
