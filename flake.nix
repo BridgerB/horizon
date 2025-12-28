@@ -11,7 +11,7 @@
   in
     with pkgs; {
       devShells.x86_64-linux.default = mkShell {
-        packages = [nodejs_24 gdal];
+        packages = [nodejs_22 gdal];
       };
     };
 }
