@@ -1,18 +1,12 @@
 import gdal from "gdal-async";
-import { computeDestinationPoint } from "geolib";
 import proj4 from "proj4";
 
-const STEP_SIZE = 100;
 const RAD_TO_DEG = 180 / Math.PI;
+const DEG_TO_RAD = Math.PI / 180;
 const WGS84 = "EPSG:4326";
 const UTM12N = "+proj=utm +zone=12 +datum=NAD83 +units=m +no_defs";
 
-interface TerrainPoint {
-  longitude: number;
-  latitude: number;
-  elevation: number;
-  distance: number;
-}
+type GeoTransform = [number, number, number, number, number, number];
 
 interface HorizonResult {
   direction: number;
@@ -20,153 +14,59 @@ interface HorizonResult {
   distance_km: number;
 }
 
-type GeoTransform = [number, number, number, number, number, number];
-
-interface RasterContext {
-  band: gdal.RasterBand;
-  geoTransform: GeoTransform;
-  rasterSize: { x: number; y: number };
-}
-
-const toUTM = (
+const toPixel = (
   latitude: number,
   longitude: number,
+  gt: GeoTransform,
 ): { x: number; y: number } => {
-  const result = proj4(WGS84, UTM12N, [longitude, latitude]) as [
+  const [utmX, utmY] = proj4(WGS84, UTM12N, [longitude, latitude]) as [
     number,
     number,
   ];
-  return { x: result[0], y: result[1] };
-};
-
-const getRasterCoordinates = (
-  geoTransform: GeoTransform,
-  utmX: number,
-  utmY: number,
-): { x: number; y: number } => ({
-  x: Math.floor((utmX - geoTransform[0]) / geoTransform[1]),
-  y: Math.floor((utmY - geoTransform[3]) / geoTransform[5]),
-});
-
-const isInBounds = (
-  x: number,
-  y: number,
-  rasterSize: { x: number; y: number },
-): boolean => x >= 0 && y >= 0 && x < rasterSize.x && y < rasterSize.y;
-
-const calculateElevationAngle = (
-  elevation: number,
-  baseElevation: number,
-  distance: number,
-): number => Math.atan2(elevation - baseElevation, distance) * RAD_TO_DEG;
-
-const getPointAtDistance = (
-  startLatitude: number,
-  startLongitude: number,
-  distance: number,
-  direction: number,
-): { latitude: number; longitude: number } =>
-  computeDestinationPoint(
-    { latitude: startLatitude, longitude: startLongitude },
-    distance,
-    direction,
-  );
-
-const getTerrainPointAtDistance = (
-  ctx: RasterContext,
-  startLatitude: number,
-  startLongitude: number,
-  direction: number,
-  distance: number,
-): TerrainPoint | null => {
-  const { longitude, latitude } = getPointAtDistance(
-    startLatitude,
-    startLongitude,
-    distance,
-    direction,
-  );
-  const utm = toUTM(latitude, longitude);
-  const { x, y } = getRasterCoordinates(ctx.geoTransform, utm.x, utm.y);
-
-  if (!isInBounds(x, y, ctx.rasterSize)) return null;
-
   return {
-    longitude,
-    latitude,
-    elevation: ctx.band.pixels.get(x, y),
-    distance,
+    x: (utmX - gt[0]) / gt[1],
+    y: (utmY - gt[3]) / gt[5],
   };
 };
 
-const generateDistances = (
-  start: number,
-  step: number,
-  max: number,
-): number[] =>
-  Array.from({ length: Math.ceil(max / step) }, (_, i) => start + i * step);
-
-const getTerrainData = (
-  ctx: RasterContext,
-  startLatitude: number,
-  startLongitude: number,
-  direction: number,
-): TerrainPoint[] => {
-  const maxDistance = 100000;
-  const distances = generateDistances(0, STEP_SIZE, maxDistance);
-
-  const points: TerrainPoint[] = [];
-  for (const dist of distances) {
-    const point = getTerrainPointAtDistance(
-      ctx,
-      startLatitude,
-      startLongitude,
-      direction,
-      dist,
-    );
-    if (point === null) break;
-    points.push(point);
-  }
-  return points;
-};
-
-const findMaxElevation = (
-  points: TerrainPoint[],
-  baseElevation: number,
-): { angle: number; distance: number } =>
-  points
-    .filter((p) => p.distance > 0)
-    .reduce(
-      (max, point) => {
-        const angle = calculateElevationAngle(
-          point.elevation,
-          baseElevation,
-          point.distance,
-        );
-        return angle > max.angle ? { angle, distance: point.distance } : max;
-      },
-      { angle: -Infinity, distance: 0 },
-    );
-
 const calculateHorizonForDirection = (
-  ctx: RasterContext,
-  latitude: number,
-  longitude: number,
+  rasterData: Float32Array,
+  width: number,
+  height: number,
+  startX: number,
+  startY: number,
   direction: number,
+  pixelSize: number,
 ): HorizonResult => {
-  const points = getTerrainData(ctx, latitude, longitude, direction);
-  const firstPoint = points[0];
+  const dx = Math.sin(direction * DEG_TO_RAD);
+  const dy = -Math.cos(direction * DEG_TO_RAD);
 
-  if (!firstPoint) {
-    return { direction, elevationAngleDegrees: 0, distance_km: 0 };
+  const startIdx = Math.floor(startY) * width + Math.floor(startX);
+  const baseElevation = rasterData[startIdx] ?? 0;
+
+  let maxAngle = -Infinity;
+  let maxDistance = 0;
+
+  for (let step = 1;; step++) {
+    const px = Math.floor(startX + dx * step);
+    const py = Math.floor(startY + dy * step);
+
+    if (px < 0 || py < 0 || px >= width || py >= height) break;
+
+    const elevation = rasterData[py * width + px] ?? 0;
+    const distance = step * pixelSize;
+    const angle = Math.atan2(elevation - baseElevation, distance) * RAD_TO_DEG;
+
+    if (angle > maxAngle) {
+      maxAngle = angle;
+      maxDistance = distance;
+    }
   }
-
-  const baseElevation = firstPoint.elevation;
-  const { angle, distance } = findMaxElevation(points, baseElevation);
 
   return {
     direction,
-    elevationAngleDegrees: angle === -Infinity ? 0 : angle,
-    distance_km: distance / 1000,
+    elevationAngleDegrees: maxAngle === -Infinity ? 0 : maxAngle,
+    distance_km: maxDistance / 1000,
   };
 };
 
@@ -180,11 +80,14 @@ const calculateHorizon = async (
   const dataset = await gdal.openAsync(tifPath);
   if (!dataset.geoTransform) throw new Error("Missing geoTransform");
 
-  const ctx: RasterContext = {
-    band: dataset.bands.get(1),
-    geoTransform: dataset.geoTransform as GeoTransform,
-    rasterSize: dataset.rasterSize,
-  };
+  const gt = dataset.geoTransform as GeoTransform;
+  const { x: width, y: height } = dataset.rasterSize;
+  const pixelSize = Math.abs(gt[1]);
+
+  const band = dataset.bands.get(1);
+  const rasterData = band.pixels.read(0, 0, width, height) as Float32Array;
+
+  const start = toPixel(latitude, longitude, gt);
 
   const directions = [...Array(endDirection - startDirection + 1).keys()].map(
     (i) => startDirection + i,
@@ -192,10 +95,13 @@ const calculateHorizon = async (
 
   return directions.map((direction) => {
     const result = calculateHorizonForDirection(
-      ctx,
-      latitude,
-      longitude,
+      rasterData,
+      width,
+      height,
+      start.x,
+      start.y,
       direction,
+      pixelSize,
     );
     console.error(
       `Direction: ${direction}° - Elevation: ${
