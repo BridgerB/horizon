@@ -3,13 +3,13 @@
   "version": "1.0.0",
   "description": "Calculate 360-degree horizon elevation angles from elevation data",
   "type": "module",
-  "exports": {
-    ".": {
-      "types": "./src/index.ts",
-      "import": "./src/index.ts"
-    }
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
   },
-  "files": ["src"],
   "keywords": ["horizon", "elevation", "terrain", "gdal", "geotiff", "solar"],
   "author": "BridgerB",
   "license": "Unlicense",
@@ -18,12 +18,16 @@
     "url": "git+https://github.com/BridgerB/horizon.git"
   },
   "engines": {
-    "node": ">=24"
+    "node": ">=22"
   },
   "peerDependencies": {
     "gdal-async": ">=3.8.0"
   },
   "dependencies": {
     "proj4": "^2.20.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.3"
   }
 }

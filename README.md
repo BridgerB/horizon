@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Node.js 24+
+- Node.js 22+
 - GDAL (`brew install gdal` / `apt install gdal-bin`)
 
 ## Install

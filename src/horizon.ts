@@ -1,6 +1,6 @@
 import gdal from "gdal-async";
 import proj4 from "proj4";
-import type { ElevationData, HorizonResult } from "./types.ts";
+import type { ElevationData, HorizonResult } from "./types.js";
 
 const RAD_TO_DEG = 180 / Math.PI;
 const DEG_TO_RAD = Math.PI / 180;
