@@ -12,49 +12,52 @@ type GeoTransform = [number, number, number, number, number, number];
 const toPixel = (
   latitude: number,
   longitude: number,
-  gt: GeoTransform,
-): { x: number; y: number } => {
+  originX: number,
+  pixelWidth: number,
+  originY: number,
+  pixelHeight: number,
+): { pixelX: number; pixelY: number } => {
   const [utmX, utmY] = proj4(WGS84, UTM12N, [longitude, latitude]) as [
     number,
     number,
   ];
   return {
-    x: (utmX - gt[0]) / gt[1],
-    y: (utmY - gt[3]) / gt[5],
+    pixelX: (utmX - originX) / pixelWidth,
+    pixelY: (utmY - originY) / pixelHeight,
   };
 };
 
 const isOutOfBounds = (
-  px: number,
-  py: number,
+  pixelX: number,
+  pixelY: number,
   width: number,
   height: number,
-): boolean => px < 0 || py < 0 || px >= width || py >= height;
+): boolean => pixelX < 0 || pixelY < 0 || pixelX >= width || pixelY >= height;
 
 const findHorizon = (
   rasterData: Float32Array,
   width: number,
   height: number,
-  startX: number,
-  startY: number,
+  observerX: number,
+  observerY: number,
   direction: number,
   pixelSize: number,
   baseElevation: number,
 ): HorizonResult => {
-  const dx = Math.sin(direction * DEG_TO_RAD);
-  const dy = -Math.cos(direction * DEG_TO_RAD);
+  const stepX = Math.sin(direction * DEG_TO_RAD);
+  const stepY = -Math.cos(direction * DEG_TO_RAD);
 
   let maxAngle = -Infinity;
   let maxDistance = 0;
   let step = 1;
 
   while (true) {
-    const px = Math.floor(startX + dx * step);
-    const py = Math.floor(startY + dy * step);
+    const pixelX = Math.floor(observerX + stepX * step);
+    const pixelY = Math.floor(observerY + stepY * step);
 
-    if (isOutOfBounds(px, py, width, height)) break;
+    if (isOutOfBounds(pixelX, pixelY, width, height)) break;
 
-    const elevation = rasterData[py * width + px] ?? 0;
+    const elevation = rasterData[pixelY * width + pixelX] ?? 0;
     const distance = step * pixelSize;
     const angle = Math.atan2(elevation - baseElevation, distance) * RAD_TO_DEG;
 
@@ -80,9 +83,10 @@ export const loadElevationData = async (
 
   if (!dataset.geoTransform) throw new Error("Missing geoTransform");
 
-  const gt = dataset.geoTransform as GeoTransform;
+  const [originX, pixelWidth, , originY, , pixelHeight] =
+    dataset.geoTransform as GeoTransform;
   const { x: width, y: height } = dataset.rasterSize;
-  const pixelSize = Math.abs(gt[1]);
+  const pixelSize = Math.abs(pixelWidth);
   const band = dataset.bands.get(1);
   const rasterData = band.pixels.read(0, 0, width, height) as Float32Array;
 
@@ -93,20 +97,29 @@ export const loadElevationData = async (
       startDirection = 0,
       endDirection = 359,
     ): HorizonResult[] => {
-      const start = toPixel(latitude, longitude, gt);
-      const startIdx = Math.floor(start.y) * width + Math.floor(start.x);
-      const baseElevation = rasterData[startIdx] ?? 0;
+      const observerPixel = toPixel(
+        latitude,
+        longitude,
+        originX,
+        pixelWidth,
+        originY,
+        pixelHeight,
+      );
+      const observerIndex =
+        Math.floor(observerPixel.pixelY) * width +
+        Math.floor(observerPixel.pixelX);
+      const baseElevation = rasterData[observerIndex] ?? 0;
 
       return Array.from(
         { length: endDirection - startDirection + 1 },
-        (_, i) =>
+        (_, directionOffset) =>
           findHorizon(
             rasterData,
             width,
             height,
-            start.x,
-            start.y,
-            startDirection + i,
+            observerPixel.pixelX,
+            observerPixel.pixelY,
+            startDirection + directionOffset,
             pixelSize,
             baseElevation,
           ),
