@@ -2,12 +2,30 @@ import gdal from "gdal-async";
 import proj4 from "proj4";
 import type { ElevationData, HorizonResult } from "./types.js";
 
+/** Conversion factor from radians to degrees */
 const RAD_TO_DEG = 180 / Math.PI;
+
+/** Conversion factor from degrees to radians */
 const DEG_TO_RAD = Math.PI / 180;
+
+/** WGS84 coordinate reference system (standard GPS coordinates) */
 const WGS84 = "EPSG:4326";
 
+/** GeoTIFF transformation matrix: [originX, pixelWidth, rotationX, originY, rotationY, pixelHeight] */
 type GeoTransform = [number, number, number, number, number, number];
 
+/**
+ * Convert geographic coordinates (latitude/longitude) to pixel coordinates.
+ *
+ * @param latitude - Latitude in decimal degrees
+ * @param longitude - Longitude in decimal degrees
+ * @param originX - X coordinate of the raster origin (from GeoTransform)
+ * @param pixelWidth - Width of each pixel in projection units (from GeoTransform)
+ * @param originY - Y coordinate of the raster origin (from GeoTransform)
+ * @param pixelHeight - Height of each pixel in projection units (from GeoTransform)
+ * @param projection - Proj4 projection string from the GeoTIFF
+ * @returns Pixel coordinates { pixelX, pixelY }
+ */
 const toPixel = (
   latitude: number,
   longitude: number,
@@ -27,6 +45,15 @@ const toPixel = (
   };
 };
 
+/**
+ * Check if pixel coordinates are outside the raster bounds.
+ *
+ * @param pixelX - X pixel coordinate
+ * @param pixelY - Y pixel coordinate
+ * @param width - Raster width in pixels
+ * @param height - Raster height in pixels
+ * @returns True if coordinates are out of bounds
+ */
 const isOutOfBounds = (
   pixelX: number,
   pixelY: number,
@@ -34,6 +61,22 @@ const isOutOfBounds = (
   height: number,
 ): boolean => pixelX < 0 || pixelY < 0 || pixelX >= width || pixelY >= height;
 
+/**
+ * Find the horizon point in a single compass direction using ray marching.
+ *
+ * Steps outward from the observer position, tracking the maximum elevation
+ * angle encountered. The horizon is the point with the highest elevation angle.
+ *
+ * @param rasterData - Elevation data as a flat Float32Array
+ * @param width - Raster width in pixels
+ * @param height - Raster height in pixels
+ * @param observerX - Observer X position in pixel coordinates
+ * @param observerY - Observer Y position in pixel coordinates
+ * @param direction - Compass direction in degrees (0 = North, 90 = East)
+ * @param pixelSize - Size of each pixel in meters
+ * @param baseElevation - Elevation at the observer position in meters
+ * @returns Horizon result with direction, elevation angle, and distance
+ */
 const findHorizon = (
   rasterData: Float32Array,
   width: number,
@@ -76,6 +119,24 @@ const findHorizon = (
   };
 };
 
+/**
+ * Load elevation data from a GeoTIFF file.
+ *
+ * Reads the entire raster into memory for fast horizon calculations.
+ * Automatically detects the projection from the GeoTIFF file.
+ *
+ * @param tifPath - Path to the GeoTIFF elevation file
+ * @returns ElevationData object with calculateHorizon method
+ * @throws {Error} If GeoTIFF is missing geoTransform metadata
+ * @throws {Error} If GeoTIFF is missing spatial reference system
+ *
+ * @example
+ * ```typescript
+ * const elevation = await loadElevationData('data/n41w112_30m.tif');
+ * const horizon = elevation.calculateHorizon(40.3908, -111.6458);
+ * console.log(horizon[0]); // { direction: 0, elevationAngleDegrees: 5.2, distance_km: 12.3 }
+ * ```
+ */
 export const loadElevationData = async (
   tifPath: string,
 ): Promise<ElevationData> => {
