@@ -115,7 +115,7 @@ const findHorizon = (
   return {
     direction,
     elevationAngleDegrees: maxAngle === -Infinity ? 0 : maxAngle,
-    distance_km: maxDistance / 1000,
+    distanceKm: maxDistance / 1000,
   };
 };
 
@@ -134,7 +134,7 @@ const findHorizon = (
  * ```typescript
  * const elevation = await loadElevationData('data/n41w112_30m.tif');
  * const horizon = elevation.calculateHorizon(40.3908, -111.6458);
- * console.log(horizon[0]); // { direction: 0, elevationAngleDegrees: 5.2, distance_km: 12.3 }
+ * console.log(horizon[0]); // { direction: 0, elevationAngleDegrees: 5.2, distanceKm: 12.3 }
  * ```
  */
 export const loadElevationData = async (

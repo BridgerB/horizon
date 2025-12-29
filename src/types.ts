@@ -9,7 +9,7 @@ export interface HorizonResult {
   elevationAngleDegrees: number;
 
   /** Distance to the horizon point in kilometers */
-  distance_km: number;
+  distanceKm: number;
 }
 
 /**
