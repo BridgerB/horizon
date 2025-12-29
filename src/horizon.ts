@@ -5,7 +5,6 @@ import type { ElevationData, HorizonResult } from "./types.js";
 const RAD_TO_DEG = 180 / Math.PI;
 const DEG_TO_RAD = Math.PI / 180;
 const WGS84 = "EPSG:4326";
-const UTM12N = "+proj=utm +zone=12 +datum=NAD83 +units=m +no_defs";
 
 type GeoTransform = [number, number, number, number, number, number];
 
@@ -16,14 +15,15 @@ const toPixel = (
   pixelWidth: number,
   originY: number,
   pixelHeight: number,
+  projection: string,
 ): { pixelX: number; pixelY: number } => {
-  const [utmX, utmY] = proj4(WGS84, UTM12N, [longitude, latitude]) as [
+  const [projX, projY] = proj4(WGS84, projection, [longitude, latitude]) as [
     number,
     number,
   ];
   return {
-    pixelX: (utmX - originX) / pixelWidth,
-    pixelY: (utmY - originY) / pixelHeight,
+    pixelX: (projX - originX) / pixelWidth,
+    pixelY: (projY - originY) / pixelHeight,
   };
 };
 
@@ -82,9 +82,11 @@ export const loadElevationData = async (
   const dataset = await gdal.openAsync(tifPath);
 
   if (!dataset.geoTransform) throw new Error("Missing geoTransform");
+  if (!dataset.srs) throw new Error("Missing spatial reference system");
 
-  const [originX, pixelWidth, , originY, , pixelHeight] =
-    dataset.geoTransform as GeoTransform;
+  const projection = dataset.srs.toProj4();
+  const [originX, pixelWidth, , originY, , pixelHeight] = dataset
+    .geoTransform as GeoTransform;
   const { x: width, y: height } = dataset.rasterSize;
   const pixelSize = Math.abs(pixelWidth);
   const band = dataset.bands.get(1);
@@ -104,9 +106,9 @@ export const loadElevationData = async (
         pixelWidth,
         originY,
         pixelHeight,
+        projection,
       );
-      const observerIndex =
-        Math.floor(observerPixel.pixelY) * width +
+      const observerIndex = Math.floor(observerPixel.pixelY) * width +
         Math.floor(observerPixel.pixelX);
       const baseElevation = rasterData[observerIndex] ?? 0;
 
